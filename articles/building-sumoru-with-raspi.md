@@ -6,6 +6,8 @@ topics: ["claudecode", "raspberrypi", "claude", "ai"]
 published: true
 ---
 
+![header](/images/articles/building-sumoru-with-raspi/header.png)
+
 ## はじめに
 
 最近、自律型AIエージェントが急速に注目を集めています。
