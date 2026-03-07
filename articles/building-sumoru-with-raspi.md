@@ -1,5 +1,5 @@
 ---
-title: "OpenClawじゃなくて自分で作る——Raspberry Pi 5 + Claude Code で専用AIアシスタントを育てる"
+title: "OpenClawじゃなくて自分で作る——Claude Code で専用AIアシスタントを育てる"
 emoji: "🤖"
 type: "tech"
 topics: ["claudecode", "raspberrypi", "claude", "ai"]
