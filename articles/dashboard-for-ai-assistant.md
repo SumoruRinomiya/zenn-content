@@ -105,9 +105,9 @@ spawnSync('node', ['/home/sumomo/sumoru/tasks/worker.mjs'], {
 });
 ```
 
-### メール一覧APIのGmail認証
+### メール一覧APIのIMAP接続
 
-ダッシュボードにはメール確認機能も入れています。Gmail APIの認証まわりで、アクセストークンの期限切れをリフレッシュするロジックが抜けていて数時間ハマりました。`google-auth-library` の `getAccessToken()` はリフレッシュを自動でやってくれるので、自前でリフレッシュしようとするより任せた方がよいです。
+ダッシュボードにはメール確認機能も入れています。`imapflow` ライブラリを使ってOutlook（`outlook.office365.com:993`）にIMAP接続する構成です。IMAPなのでOAuth不要でシンプルに実装できました。
 
 ---
 
