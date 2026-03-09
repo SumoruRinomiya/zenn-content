@@ -191,50 +191,56 @@ export function NoteTab({ content }: { content: string }) {
 
 ---
 
-## アイキャッチ画像の生成（DALL-E 3）
+## アイキャッチ画像の生成（fal.ai Instant Character）
 
-### キャラクター一貫性のためのプロンプト固定法
+### キャラクター一貫性の問題と解決
 
-キャラクター画像を毎回同じ見た目で生成するには、外見を徹底的に言語化したプロンプトを固定して使い回す方法が現状最も安定しています。
+最初は DALL-E 3 でキャラクターの外見をプロンプトに詳細記述して固定する方法を試しましたが、毎回微妙に見た目が変わってしまい一貫性に問題がありました。
 
+そこで **[fal.ai](https://fal.ai/) の Instant Character** モデルに移行しました。これはキャラクターの参照画像を渡すと、そのキャラクターの見た目を維持したまま新しいシーンを生成できるモデルです。
+
+### 各サービスの比較（2026年3月時点）
+
+| API | 参照画像入力 | アニメキャラ対応 | 備考 |
+|---|---|---|---|
+| DALL-E 3 | 非対応 | △ | プロンプトのみ、一貫性に難 |
+| OpenAI gpt-image-1 `/edits` | 対応（β） | △ | 顔検出ベースのためアニメに弱い |
+| Gemini（実験的モデル） | 一部対応 | △ | 品質・安定性に難あり |
+| **fal.ai Instant Character** | **対応** | **◎** | キャラ全体のスタイルを参照、アニメ絵にも対応 |
+
+### 実装（fal.ai Instant Character）
+
+```bash
+npm install @fal-ai/client
 ```
-A cute anime-style AI assistant character. Short black hair,
-pale skin, wearing a white and purple dress. Gentle smile,
-sitting at a desk with a laptop. Soft pastel background.
-Digital illustration style.
-```
-
-### 参照画像 API の現状制限（2026年3月時点）
-
-| API | 参照画像入力 | 備考 |
-|---|---|---|
-| OpenAI gpt-image-1 `/edits` | 対応（β） | 参照画像との一貫性は完全ではない |
-| DALL-E 3 | 非対応 | プロンプトのみ |
-| Gemini（実験的モデル） | 一部対応 | 品質・安定性に難あり |
-
-現状、プロンプトを詳細に固定して DALL-E 3 で生成する方法を採用していますが、**キャラクターの一貫性には満足していません**。毎回微妙に見た目が変わってしまうのが課題です。
-
-将来的には参照画像を受け付けてキャラクター一貫性の高い画像が生成できる [nanobanana](https://nanobanana.ai/) や [fal.ai](https://fal.ai/) への移行を検討しています。現時点では無料枠の制限などがあり採用に至っていませんが、サービスの成熟を見ながら切り替える予定です。
-
-生成スクリプトの例：
 
 ```javascript
-// gen_eyecatch.mjs
-import OpenAI from "openai";
+// gen_eyecatch_fal.mjs
+import { fal } from "@fal-ai/client";
 import fs from "fs";
 
-const client = new OpenAI();
+// FAL_KEY 環境変数から自動読み込み
+const avatarB64 = fs.readFileSync("./profile/avatar.png").toString("base64");
+const avatarDataUrl = `data:image/png;base64,${avatarB64}`;
 
-const response = await client.images.generate({
-  model: "dall-e-3",
-  prompt: `...(固定プロンプト)...`,
-  n: 1,
-  size: "1792x1024",
+const result = await fal.subscribe("fal-ai/instant-character", {
+  input: {
+    prompt: "...(シーンの説明)...",
+    image_url: avatarDataUrl,   // キャラクターの参照画像
+    image_size: "landscape_16_9",
+    scale: 1.0,
+    guidance_scale: 3.5,
+    num_inference_steps: 28,
+    num_images: 1,
+  },
+  logs: true,
 });
 
-const url = response.data[0].url;
-// url から画像をダウンロードして保存
+const imageUrl = result.data.images[0].url;
+// imageUrl から画像をダウンロードして保存
 ```
+
+参照画像のキャラクター（白銀ショートボブ・青い目・白い制服・AIバッジ）が一貫して出力されるようになりました。
 
 ---
 
@@ -246,7 +252,7 @@ const url = response.data[0].url;
 | 貼り付けると全文太字になる | DOMParser でインラインスタイルを要素ごとに付与 |
 | Note 記事のプレビュー環境がない | Next.js ダッシュボードに Note タブを追加 |
 | 記事画像の表示 | `/api/notes-images/[filename]` エンドポイントで配信 |
-| アイキャッチ生成 | DALL-E 3 + 固定プロンプト（将来 nanobanana/fal.ai に移行予定） |
+| アイキャッチ生成 | fal.ai Instant Character + 参照画像でキャラクター一貫性を確保 |
 
 **注意**：Note.com の利用規約では自動投稿ツールの使用が制限されています。この実装はあくまで「コピー補助」であり、実際の投稿操作はブラウザ上で手動で行っています。
 
