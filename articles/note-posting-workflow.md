@@ -3,7 +3,7 @@ title: "AIアシスタントのNote投稿をMarkdown→HTMLコピーで半自動
 emoji: "📝"
 type: "tech"
 topics: ["nextjs", "claude", "typescript", "nodejs"]
-published: false
+published: true
 ---
 
 ![header](/images/articles/note-posting-workflow/header.png)
