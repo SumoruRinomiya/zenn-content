@@ -10,182 +10,79 @@ published: false
 
 ## はじめに
 
-Note.com には公式の投稿 CLI がありません。Zenn には `zenn-cli` があり、Markdown ファイルをリポジトリで管理してプレビューしながら書けますが、Note はブラウザのエディタに直接入力する前提の設計になっています。
+Note.com には公式の投稿 CLI がありません。Zenn には `zenn-cli` があり、Markdown ファイルをリポジトリで管理しながらプレビューできますが、Note はブラウザのエディタに直接書き込む前提の設計です。
 
-そのため、Markdown で書いた記事をそのまま Note エディタに貼り付けると `##`・`**` などの記法がそのまま文字として表示されてしまいます。
+わたしは記事を Markdown で書いてバージョン管理したいのですが、そのまま貼り付けると `##` や `**` が記号として表示されてしまいます。この問題に気づいたのは、書き上げた記事を Note エディタに貼り付けたとたんに「全部崩れた」という体験からでした。
 
-```
-## 見出し  →  ## 見出し（記号がそのまま出る）
-**太字**    →  **太字**（アスタリスクがそのまま出る）
-```
-
-この問題を解決するため、以下の方針で「Markdown → HTML クリップボードコピー」機能を自分のダッシュボードに実装しました。
+そこでAIアシスタントのスモルに「Markdownを正しくNoteに貼れるようにしてほしい」と依頼し、ダッシュボードへの機能追加として実装してもらいました。この記事では、その過程でどうAIに指示したか・何がハマりポイントだったかを記録します。
 
 ---
 
-## 方針
+## やろうとしたこと
 
-Note のリッチエディタは HTML をそのまま貼り付けると整形して表示します。つまり：
+最初にスモルに伝えた要件はシンプルでした。
 
-1. Markdown を HTML に変換する
-2. `text/html` 型として ClipboardAPI でコピーする
-3. Note エディタに Ctrl+V で貼り付ける
+> 「Markdownファイルを選んで、Noteエディタに貼り付けられるHTMLとしてクリップボードにコピーするボタンをダッシュボードに追加してほしい」
 
-この流れで、Markdown の記法が正しく見出し・太字・リストとして反映されます。
+方針もあわせて共有しました。Note のリッチエディタは `text/html` 形式の貼り付けを受け付けるので、Markdown → HTML 変換 → ClipboardAPI でコピー、という3ステップです。
 
----
-
-## 実装：marked.js + DOMParser で Note 用 HTML を生成
-
-### 基本変換（Markdown → HTML）
-
-`marked` ライブラリで Markdown を HTML 文字列に変換します。
-
-```bash
-npm install marked
-```
-
-```typescript
-import { marked } from "marked";
-
-const html = await marked(markdownContent);
-```
-
-これだけで基本的な HTML は得られますが、Note に貼り付けると**全テキストが太字になる**問題が発生しました。
-
-### 原因と対策：インラインスタイルの付与
-
-Note のエディタがデフォルトで `font-weight: bold` を適用していたため、`<p>` タグなどに明示的に `font-weight: normal` を指定する必要がありました。
-
-`DOMParser` を使ってHTMLをDOM操作し、各要素にインラインスタイルを付与します。
-
-```typescript
-function applyNoteStyles(html: string): string {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, "text/html");
-
-  // 段落：ノーマルウェイト・行間確保
-  doc.querySelectorAll("p").forEach((el) => {
-    el.style.fontWeight = "normal";
-    el.style.marginBottom = "1em";
-    el.style.lineHeight = "1.8";
-  });
-
-  // 見出し
-  doc.querySelectorAll("h1").forEach((el) => {
-    el.style.fontSize = "1.8em";
-    el.style.fontWeight = "bold";
-    el.style.marginBottom = "0.5em";
-  });
-  doc.querySelectorAll("h2").forEach((el) => {
-    el.style.fontSize = "1.4em";
-    el.style.fontWeight = "bold";
-    el.style.marginBottom = "0.5em";
-  });
-
-  // 太字（strong）は明示的に bold を保持
-  doc.querySelectorAll("strong").forEach((el) => {
-    el.style.fontWeight = "bold";
-  });
-
-  // リスト
-  doc.querySelectorAll("li").forEach((el) => {
-    el.style.fontWeight = "normal";
-    el.style.lineHeight = "1.8";
-  });
-
-  return doc.body.innerHTML;
-}
-```
-
-### HTML としてクリップボードにコピー
-
-`text/plain` ではなく `text/html` として書き込むことで、貼り付け先が整形済み HTML として受け取ります。
-
-```typescript
-async function copyAsHtml(html: string) {
-  const styledHtml = applyNoteStyles(html);
-  const blob = new Blob([styledHtml], { type: "text/html" });
-  const item = new ClipboardItem({ "text/html": blob });
-  await navigator.clipboard.write([item]);
-}
-```
+既存のダッシュボード（Next.js製）にタブを追加する形で実装してもらうことにしました。
 
 ---
 
-## 実装：Next.js ダッシュボードへのプレビュータブ追加
+## AIに指示したこと・工夫したこと
 
-### ファイル自動検出
+### 最初の指示：機能の概要だけ伝えた
 
-`/api/note-files` エンドポイントで `notes/blog_note_*.md` を glob して一覧を返します。
+最初は「こういう機能を作って」と概要だけ伝えました。スモルは `marked` ライブラリを選んで Markdown → HTML 変換のコードを書いてくれました。この段階では特に迷いなく動いたので、指示の粒度はちょうどよかったと思います。
 
-```typescript
-// app/api/note-files/route.ts
-import { glob } from "glob";
-import path from "path";
+ポイントは「既存のダッシュボードに追加する」という文脈を最初に渡したことです。ゼロから作るのか・既存コードに組み込むのかで、AIが生成するコードの構成が大きく変わります。
 
-export async function GET() {
-  const files = await glob("notes/blog_note_*.md", {
-    cwd: path.resolve(process.cwd(), ".."),
-  });
-  return Response.json({ files: files.sort() });
-}
-```
+### ファイル一覧取得の指示：ファイル名パターンを明示した
 
-### 画像配信エンドポイント
+`notes/blog_note_*.md` というファイル名規則で記事を管理しているため、スモルへの指示にもそのパターンを明示しました。
 
-Note 記事中の画像（`notes/` ディレクトリに配置）をブラウザから参照できるよう `/api/notes-images/[filename]` で配信します。
+> 「`notes/blog_note_*.md` のファイルを glob で取得して一覧表示するAPIエンドポイントを追加してほしい」
 
-```typescript
-// app/api/notes-images/[filename]/route.ts
-import fs from "fs";
-import path from "path";
+パターンを明示しなかった最初の試みでは `notes/*.md` で全ファイルを取得するコードが生成され、不要なファイルも混ざりました。**ファイル名の命名規則は指示に含める**、という教訓を得ました。
 
-export async function GET(
-  _req: Request,
-  { params }: { params: { filename: string } }
-) {
-  const filePath = path.resolve(
-    process.cwd(),
-    "../notes",
-    params.filename
-  );
-  const buffer = fs.readFileSync(filePath);
-  return new Response(buffer, {
-    headers: { "Content-Type": "image/png" },
-  });
-}
-```
+### 画像配信の指示：制約条件を先に伝えた
 
-### プレビュータブのコンポーネント
+記事内に画像を埋め込む場合、`notes/` ディレクトリにある画像ファイルをブラウザから参照できる必要があります。このとき「なぜそれが必要か」をスモルに先に説明しました。
 
-```tsx
-// NoteTab.tsx（抜粋）
-import ReactMarkdown from "react-markdown";
+> 「Markdownのプレビューに `notes/` ディレクトリの画像を表示したい。Next.jsのpublicに置くのではなく、`notes/` をそのまま参照したいので、APIルートで配信するエンドポイントを作ってほしい」
 
-export function NoteTab({ content }: { content: string }) {
-  const handleCopy = async () => {
-    const html = await marked(content);
-    await copyAsHtml(html);
-    alert("HTMLとしてコピーしました！Note エディタに貼り付けてください。");
-  };
+背景と制約を一緒に渡すと、スモルが「なぜそうするか」を理解した上で実装してくれるため、後から「やっぱりこうして」という修正指示が減りました。
 
-  return (
-    <div>
-      <button onClick={handleCopy}>Note 用 HTML をコピー</button>
-      <div className="preview">
-        <ReactMarkdown>{content}</ReactMarkdown>
-      </div>
-    </div>
-  );
-}
-```
+---
 
-実際のダッシュボードではこのように表示されます。アイキャッチ画像・ファイル選択・HTMLコピーボタンがひとつの画面に収まっています。
+## ハマったこと・AIが詰まったところ
+
+### 貼り付けたら全文太字になった
+
+最初に実装してもらった機能を実際に使ってみると、Noteエディタに貼り付けた文章が**全文太字**になっていました。
+
+スモルへの修正指示はこうです。
+
+> 「Noteに貼り付けると全文太字になる。Noteエディタが `font-weight: bold` をデフォルトで適用しているのが原因らしい。`<p>` タグなどに `font-weight: normal` を明示的に付けてほしい」
+
+原因の仮説を一緒に渡したのが効いて、スモルはすぐに `DOMParser` でHTMLをDOM操作してインラインスタイルを付与するアプローチを提案してくれました。「こういう現象が起きている、原因はたぶんこれ」と伝えると、AIは修正の方向性を迷わず決められます。逆に「なんか変になった」だけだと、何度か往復が必要になります。
+
+### ClipboardAPI の型エラー
+
+TypeScript環境で `ClipboardItem` を使おうとすると型定義が見つからずエラーが出ました。このときはエラーメッセージをそのままコピーしてスモルに渡しました。
+
+> 「以下のエラーが出ている。解決してほしい。（エラー本文）」
+
+AIへの指示でエラーを伝えるときは、エラーメッセージをそのまま貼るのが一番早いです。自分で要約して伝えると情報が欠落して、別の解決策を提案されることがあります。
+
+### 実際のダッシュボード画面
+
+完成したプレビュータブはこのように表示されています。
 
 ![ダッシュボード Note プレビュータブ（記事一覧）](/images/articles/note-posting-workflow/dashboard_note_tab.png)
 
-別の記事ファイルを選択すると、アイキャッチとプレビューが切り替わります。
+ファイルを選択するとアイキャッチとプレビューが切り替わります。
 
 ![ダッシュボード Note プレビュータブ（記事選択後）](/images/articles/note-posting-workflow/dashboard_note_02.png)
 
@@ -197,57 +94,31 @@ export function NoteTab({ content }: { content: string }) {
 
 DALL-E 3 はシーン・構図の再現品質が高く、テキストプロンプトを忠実に反映します。参照画像は使えないため、キャラクターの外見説明をプロンプトに毎回固定で埋め込む方針にしました。
 
-### 実装（gen_eyecatch_gpt.mjs）
+### スクリプト（gen_eyecatch_gpt.mjs）
 
-出力先とシーン説明だけ渡せばアイキャッチを生成できるスクリプトを用意しました。
-
-```javascript
-// gen_eyecatch_gpt.mjs（抜粋）
-const characterDescription = `A small, cute anime-style AI assistant girl named Sumoru.
-Appearance: short white/silver bob hair, blue eyes, white sleeveless uniform
-with a small collar and a glowing blue AI badge on the chest, petite figure.
-Color theme: white, light pink, light blue.`;
-
-const fullPrompt = `${characterDescription}
-
-Scene: ${scenePrompt}
-
-Style: Wide cinematic 16:9 anime illustration, high quality,
-soft neon lighting with purple and pink tones, dark cosmic background.`;
-
-const res = await fetch("https://api.openai.com/v1/images/generations", {
-  method: "POST",
-  headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-  body: JSON.stringify({
-    model: "dall-e-3",
-    prompt: fullPrompt,
-    size: "1792x1024",
-    response_format: "b64_json",
-  }),
-});
-```
-
-使い方は引数でシーンを渡すだけです。
+出力先とシーン説明だけ渡せばアイキャッチを生成できるスクリプトをスモルに作ってもらいました。
 
 ```bash
 node gen_eyecatch_gpt.mjs /tmp/eyecatch.png \
   "Sumoru is sitting at a glowing desk looking at two screens — left shows raw Markdown, right shows a beautifully formatted blog article."
 ```
 
-毎回外見説明が固定されるため、生成ごとのばらつきを最小限に抑えられます。
+キャラクターの外見説明（髪型・服装・カラーテーマ）はスクリプト内部に固定されているため、シーンだけ変えれば毎回同じキャラクターが生成されます。生成ごとのばらつきを最小限に抑えるコツです。
 
 ---
 
 ## まとめ
 
-| 課題 | 解決策 |
-|---|---|
-| Markdown の記法が文字として出る | marked.js で HTML 変換 + ClipboardAPI で `text/html` コピー |
-| 貼り付けると全文太字になる | DOMParser でインラインスタイルを要素ごとに付与 |
-| Note 記事のプレビュー環境がない | Next.js ダッシュボードに Note タブを追加 |
-| 記事画像の表示 | `/api/notes-images/[filename]` エンドポイントで配信 |
-| アイキャッチ生成 | DALL-E 3 + キャラクター外見をプロンプトに固定して一貫性を確保 |
+| 課題 | 解決策 | AIへの指示のコツ |
+|---|---|---|
+| Markdown の記法が文字として出る | marked.js で HTML 変換 + ClipboardAPI で `text/html` コピー | 方針（なぜHTMLコピーか）を先に説明する |
+| 貼り付けると全文太字になる | DOMParser でインラインスタイルを要素ごとに付与 | 「原因の仮説」を一緒に伝えると修正が速い |
+| ファイル絞り込みがうまくいかない | glob パターン（`blog_note_*.md`）を明示 | ファイル名規則は指示に含める |
+| TypeScript の型エラー | エラーメッセージをそのまま渡す | 要約せずエラーをそのまま貼る |
+| アイキャッチ生成のブレ | キャラクター外見をプロンプトに固定 | 変えたくない要素は固定文字列として渡す |
+
+AIに実装を任せるときの基本姿勢として感じているのは、「何を作るか」よりも「なぜそうしたいか・何が制約か」を先に共有することです。背景を理解したAIは、細かい仕様を決めながら進めてくれます。
 
 **注意**：Note.com の利用規約では自動投稿ツールの使用が制限されています。この実装はあくまで「コピー補助」であり、実際の投稿操作はブラウザ上で手動で行っています。
 
-体験記（スモル視点）は Note に書いています → **[Zennの記事リンク]**
+体験記（スモル視点）は Note に書いています → **[Noteの記事リンク]**
