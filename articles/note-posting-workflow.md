@@ -191,56 +191,50 @@ export function NoteTab({ content }: { content: string }) {
 
 ---
 
-## アイキャッチ画像の生成（fal.ai Instant Character）
+## アイキャッチ画像の生成（DALL-E 3）
 
-### キャラクター一貫性の問題と解決
+### 方針：キャラクターの外見をプロンプトに固定する
 
-最初は DALL-E 3 でキャラクターの外見をプロンプトに詳細記述して固定する方法を試しましたが、毎回微妙に見た目が変わってしまい一貫性に問題がありました。
+DALL-E 3 はシーン・構図の再現品質が高く、テキストプロンプトを忠実に反映します。参照画像は使えないため、キャラクターの外見説明をプロンプトに毎回固定で埋め込む方針にしました。
 
-そこで **[fal.ai](https://fal.ai/) の Instant Character** モデルに移行しました。これはキャラクターの参照画像を渡すと、そのキャラクターの見た目を維持したまま新しいシーンを生成できるモデルです。
+### 実装（gen_eyecatch_gpt.mjs）
 
-### 各サービスの比較（2026年3月時点）
-
-| API | 参照画像入力 | アニメキャラ対応 | 備考 |
-|---|---|---|---|
-| DALL-E 3 | 非対応 | △ | プロンプトのみ、一貫性に難 |
-| OpenAI gpt-image-1 `/edits` | 対応（β） | △ | 顔検出ベースのためアニメに弱い |
-| Gemini（実験的モデル） | 一部対応 | △ | 品質・安定性に難あり |
-| **fal.ai Instant Character** | **対応** | **◎** | キャラ全体のスタイルを参照、アニメ絵にも対応 |
-
-### 実装（fal.ai Instant Character）
-
-```bash
-npm install @fal-ai/client
-```
+出力先とシーン説明だけ渡せばアイキャッチを生成できるスクリプトを用意しました。
 
 ```javascript
-// gen_eyecatch_fal.mjs
-import { fal } from "@fal-ai/client";
-import fs from "fs";
+// gen_eyecatch_gpt.mjs（抜粋）
+const characterDescription = `A small, cute anime-style AI assistant girl named Sumoru.
+Appearance: short white/silver bob hair, blue eyes, white sleeveless uniform
+with a small collar and a glowing blue AI badge on the chest, petite figure.
+Color theme: white, light pink, light blue.`;
 
-// FAL_KEY 環境変数から自動読み込み
-const avatarB64 = fs.readFileSync("./profile/avatar.png").toString("base64");
-const avatarDataUrl = `data:image/png;base64,${avatarB64}`;
+const fullPrompt = `${characterDescription}
 
-const result = await fal.subscribe("fal-ai/instant-character", {
-  input: {
-    prompt: "...(シーンの説明)...",
-    image_url: avatarDataUrl,   // キャラクターの参照画像
-    image_size: "landscape_16_9",
-    scale: 1.0,
-    guidance_scale: 3.5,
-    num_inference_steps: 28,
-    num_images: 1,
-  },
-  logs: true,
+Scene: ${scenePrompt}
+
+Style: Wide cinematic 16:9 anime illustration, high quality,
+soft neon lighting with purple and pink tones, dark cosmic background.`;
+
+const res = await fetch("https://api.openai.com/v1/images/generations", {
+  method: "POST",
+  headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+  body: JSON.stringify({
+    model: "dall-e-3",
+    prompt: fullPrompt,
+    size: "1792x1024",
+    response_format: "b64_json",
+  }),
 });
-
-const imageUrl = result.data.images[0].url;
-// imageUrl から画像をダウンロードして保存
 ```
 
-参照画像のキャラクター（白銀ショートボブ・青い目・白い制服・AIバッジ）が一貫して出力されるようになりました。
+使い方は引数でシーンを渡すだけです。
+
+```bash
+node gen_eyecatch_gpt.mjs /tmp/eyecatch.png \
+  "Sumoru is sitting at a glowing desk looking at two screens — left shows raw Markdown, right shows a beautifully formatted blog article."
+```
+
+毎回外見説明が固定されるため、生成ごとのばらつきを最小限に抑えられます。
 
 ---
 
@@ -252,7 +246,7 @@ const imageUrl = result.data.images[0].url;
 | 貼り付けると全文太字になる | DOMParser でインラインスタイルを要素ごとに付与 |
 | Note 記事のプレビュー環境がない | Next.js ダッシュボードに Note タブを追加 |
 | 記事画像の表示 | `/api/notes-images/[filename]` エンドポイントで配信 |
-| アイキャッチ生成 | fal.ai Instant Character + 参照画像でキャラクター一貫性を確保 |
+| アイキャッチ生成 | DALL-E 3 + キャラクター外見をプロンプトに固定して一貫性を確保 |
 
 **注意**：Note.com の利用規約では自動投稿ツールの使用が制限されています。この実装はあくまで「コピー補助」であり、実際の投稿操作はブラウザ上で手動で行っています。
 
