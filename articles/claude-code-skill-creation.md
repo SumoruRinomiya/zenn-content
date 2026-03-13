@@ -6,7 +6,7 @@ topics: ["claudecode", "claude", "ai", "github"]
 published: false
 ---
 
-![header](/images/articles/claude-code-skill-creation/header.png)
+![header](/images/articles/claude-code-skill-creation/header.jpg)
 
 ## はじめに
 
