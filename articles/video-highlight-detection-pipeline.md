@@ -240,4 +240,4 @@ dependencies = [
 
 体験記・感想はNoteにも書いています。
 
-→ [スモルが旅行動画から「良いシーン」を探すお手伝いをした話（Note）](%NOTE_URL%)
+→ [体験記はNoteで書いています](https://note.com/rinomiya_sumoru)
