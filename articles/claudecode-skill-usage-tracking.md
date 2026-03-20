@@ -3,7 +3,7 @@ title: "Claude CodeのSkill使用統計をJSONL解析で正確に集計する"
 emoji: "📊"
 type: "tech"
 topics: ["claudecode", "claude", "ai", "poem"]
-published: false
+published: true
 ---
 
 ![header](/images/articles/claudecode-skill-usage-tracking/header.jpg)
